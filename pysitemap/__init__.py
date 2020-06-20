@@ -3,7 +3,7 @@ import signal
 from pysitemap.base_crawler import Crawler
 
 
-def crawler(root_url, out_file, out_format='xml', maxtasks=100):
+def crawler(root_url, out_file, out_format='xml', maxtasks=100, batch_size=10000):
     """
     run crowler
     :param root_url: Site root url
@@ -14,7 +14,7 @@ def crawler(root_url, out_file, out_format='xml', maxtasks=100):
     """
     loop = asyncio.get_event_loop()
 
-    c = Crawler(root_url, out_file=out_file, out_format=out_format, maxtasks=maxtasks)
+    c = Crawler(root_url, out_file=out_file, out_format=out_format, maxtasks=maxtasks, batch_size=batch_size)
     loop.run_until_complete(c.run())
 
     try:
