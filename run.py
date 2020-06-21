@@ -11,5 +11,6 @@ if __name__ == '__main__':
         events.set_event_loop(el)
 
     # root_url = sys.argv[1]
-    root_url = 'https://www.hellofresh.com/recipes'
-    crawler(root_url, out_file='sitemap.xml', batch_size=1000)
+    #root_url = 'https://www.hellofresh.com/recipes'
+    root_url = 'https://www.allrecipes.com/'
+    crawler(root_url, out_file='sitemap.xml', batch_size=10000, prefix='https://www.allrecipes.com/recipe/')

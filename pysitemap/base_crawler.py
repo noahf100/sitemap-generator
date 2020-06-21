@@ -15,7 +15,7 @@ class Crawler:
     }
 
     def __init__(self, rooturl, out_file, out_format='xml', maxtasks=100,
-                 todo_queue_backend=set, done_backend=dict, batch_size=10000):
+                 todo_queue_backend=set, done_backend=dict, batch_size=10000, prefix=None):
         """
         Crawler constructor
         :param rooturl: root url of site
@@ -48,6 +48,11 @@ class Crawler:
         self.fileIndex = 1
         self.out_file = out_file
         self.out_format = out_format
+
+        # Format for url prefix
+        self.prefix = self.rooturl
+        if prefix is not None:
+            self.prefix = prefix
 
         self.base_filename = self.out_file
         if self.base_filename.endswith(self.out_format):
@@ -101,7 +106,7 @@ class Crawler:
                 await self.sem.acquire()
                 # Create async task
                 task = asyncio.ensure_future(self.process(url))
-                # Add collback into task to release semaphore
+                # Add callback into task to release semaphore
                 task.add_done_callback(lambda t: self.sem.release())
                 # Callback to remove task from tasks
                 task.add_done_callback(self.tasks.remove)
@@ -125,7 +130,10 @@ class Crawler:
         except Exception as exc:
             # on any exception mark url as BAD
             print('...', url, 'has error', repr(str(exc)))
-            self.done[url] = False
+            # I don't think this is needed anymore
+            if url.startswith(self.prefix):
+                self.done[url] = False
+            # Add url to seen set
             self.seen.add(url)
         else:
             # only url with status == 200 and content type == 'text/html' parsed
@@ -145,10 +153,12 @@ class Crawler:
 
             # even if we have no exception, we can mark url as good
             resp.close()
-            self.done[url] = True
+            # Prep url for write if it begins with prefix
+            if url.startswith(self.prefix):
+                self.done[url] = True
+                self.countFinished += 1
+            # Add url to seen set
             self.seen.add(url)
-            self.countFinished += 1
-
         self.busy.remove(url)
 
         # If number of finished tasks is the same as the batch_size
