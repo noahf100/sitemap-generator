@@ -1,10 +1,12 @@
-import logging
+import aiohttp
 import asyncio
+import logging
 import re
 import urllib.parse
+
+from sqlitedict import SqliteDict
 from pysitemap.format_processors.xml import XMLWriter
 from pysitemap.format_processors.text import TextWriter
-import aiohttp
 
 
 class Crawler:
@@ -34,12 +36,11 @@ class Crawler:
         :type batch_size: int
         """
         self.rooturl = rooturl
-        self.todo_queue = todo_queue_backend()
+        self.todo_queue = SqliteDict('./todo.sqlite', autocommit=True)
         self.busy = set()
         self.done = done_backend()
-        self.tasks = set()
         self.sem = asyncio.Semaphore(maxtasks)
-        self.seen = set()
+        self.seen = SqliteDict('./seen.sqlite', autocommit=True)
 
         # For writing files in batches
         self.batch_size = batch_size
@@ -87,6 +88,8 @@ class Crawler:
         await t
         await self.session.close()
         await self.write(self.fileIndex)
+        self.seen.close()
+        self.todo_queue.close()
 
     async def addurls(self, urls):
         """
@@ -101,17 +104,13 @@ class Crawler:
                     url not in self.busy and
                     url not in self.seen and
                     url not in self.todo_queue):
-                self.todo_queue.add(url)
+                self.todo_queue[url] = True
                 # Acquire semaphore
                 await self.sem.acquire()
                 # Create async task
                 task = asyncio.ensure_future(self.process(url))
                 # Add callback into task to release semaphore
                 task.add_done_callback(lambda t: self.sem.release())
-                # Callback to remove task from tasks
-                task.add_done_callback(self.tasks.remove)
-                # Add task into tasks
-                self.tasks.add(task)
 
     async def process(self, url):
         """
@@ -134,7 +133,7 @@ class Crawler:
             if url.startswith(self.prefix):
                 self.done[url] = False
             # Add url to seen set
-            self.seen.add(url)
+            self.seen[url] = True
         else:
             # only url with status == 200 and content type == 'text/html' parsed
             if (resp.status == 200 and
@@ -158,7 +157,7 @@ class Crawler:
                 self.done[url] = True
                 self.countFinished += 1
             # Add url to seen set
-            self.seen.add(url)
+            self.seen[url] = True
         self.busy.remove(url)
 
         # If number of finished tasks is the same as the batch_size
@@ -177,7 +176,4 @@ class Crawler:
             finally:
                 self.fileSem.release()
 
-        logging.info(len(self.done), 'completed tasks,', len(self.tasks),
-              'still pending, todo_queue', len(self.todo_queue))
-
-
+        logging.info(len(self.done))

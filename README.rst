@@ -18,6 +18,7 @@ requirements
     asyncio
     aiofile
     aiohttp
+    sqlitedict
 
 example
 -------
