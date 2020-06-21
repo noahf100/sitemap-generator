@@ -1,5 +1,7 @@
 import asyncio
+import os
 import signal
+
 from pysitemap.base_crawler import Crawler
 
 
@@ -13,6 +15,10 @@ def crawler(root_url, out_file, out_format='xml', maxtasks=100, batch_size=10000
     :return:
     """
     loop = asyncio.get_event_loop()
+
+    # TODO (noahfang) - put name in assets file and use here and in base_crawler.py
+    os.remove('seen.db')
+    os.remove('todo.db')
 
     c = Crawler(root_url, out_file=out_file, out_format=out_format, maxtasks=maxtasks, batch_size=batch_size, prefix=prefix)
     loop.run_until_complete(c.run())

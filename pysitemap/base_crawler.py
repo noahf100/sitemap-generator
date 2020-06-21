@@ -121,7 +121,7 @@ class Crawler:
         print('processing:', url)
 
         # remove url from basic queue and add it into busy list
-        self.todo_queue.remove(url)
+        del self.todo_queue[url]
         self.busy.add(url)
 
         try:
