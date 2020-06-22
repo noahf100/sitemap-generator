@@ -5,7 +5,8 @@ import signal
 from pysitemap.base_crawler import Crawler
 
 
-def crawler(root_url, out_file, out_format='xml', maxtasks=100, batch_size=10000, prefix=None, load=False):
+def crawler(root_url, out_file, out_format='xml', maxtasks=100,
+            batch_size=10000, prefix=None, load=False):
     """
     run crowler
     :param root_url: Site root url
@@ -25,7 +26,8 @@ def crawler(root_url, out_file, out_format='xml', maxtasks=100, batch_size=10000
         except:
             pass
 
-    c = Crawler(root_url, out_file=out_file, out_format=out_format, maxtasks=maxtasks, batch_size=batch_size, prefix=prefix)
+    c = Crawler(root_url, out_file=out_file, out_format=out_format, maxtasks=maxtasks,
+                batch_size=batch_size, prefix=prefix, load=load)
     loop.run_until_complete(c.run())
 
     try:
