@@ -17,7 +17,8 @@ class Crawler:
     }
 
     def __init__(self, rooturl, out_file, out_format='xml', maxtasks=100,
-                 todo_queue_backend=set, done_backend=dict, batch_size=10000, prefix=None):
+                 todo_queue_backend=set, done_backend=dict, batch_size=10000,
+                 prefix=None, load=False):
         """
         Crawler constructor
         :param rooturl: root url of site
@@ -41,6 +42,8 @@ class Crawler:
         self.done = done_backend()
         self.sem = asyncio.Semaphore(maxtasks)
         self.seen = SqliteDict('./seen.sqlite', autocommit=True)
+        self.maxtasks = maxtasks
+        self.load = load
 
         # For writing files in batches
         self.batch_size = batch_size
@@ -80,7 +83,13 @@ class Crawler:
         Main function to start parsing site
         :return:
         """
-        t = asyncio.ensure_future(self.addurls([(self.rooturl, '')]))
+        if self.load:
+            for _ in range(self.maxtasks):
+                t = asyncio.ensure_future(self.maybeAddUrl())
+        else:
+            self.addurls([(self.rooturl, '')])
+            t = asyncio.ensure_future(self.maybeAddUrl())
+        
         await asyncio.sleep(1)
         while self.busy:
             await asyncio.sleep(1)
@@ -91,7 +100,25 @@ class Crawler:
         self.seen.close()
         self.todo_queue.close()
 
-    async def addurls(self, urls):
+    async def maybeAddUrl(self, url=None):
+        if len(self.todo_queue.keys()) == 0:
+            return
+        if url is None:
+            url = next(iter(self.todo_queue.keys()))
+        # Acquire semaphore
+        await self.sem.acquire()
+        # Create async task
+        task = asyncio.ensure_future(self.process(url))
+        # Add callback into task to release semaphore
+        task.add_done_callback(lambda t: self.sem.release())
+        # Add callback to pull another from todo queue
+        task.add_done_callback(lambda _: self.maybeAddUrl())
+        
+        # While resources availible, use them
+        while not self.sem.locked():
+            asyncio.ensure_future(self.maybeAddUrl())
+
+    def addurls(self, urls):
         """
         Add urls in queue and run process to parse
         :param urls:
@@ -105,12 +132,6 @@ class Crawler:
                     url not in self.seen and
                     url not in self.todo_queue):
                 self.todo_queue[url] = True
-                # Acquire semaphore
-                await self.sem.acquire()
-                # Create async task
-                task = asyncio.ensure_future(self.process(url))
-                # Add callback into task to release semaphore
-                task.add_done_callback(lambda t: self.sem.release())
 
     async def process(self, url):
         """
