@@ -37,11 +37,17 @@ class Crawler:
         :type batch_size: int
         """
         self.rooturl = rooturl
+
+        self.todoSem = asyncio.Semaphore(1)
         self.todo_queue = SqliteDict('./todo.sqlite', autocommit=True)
+        
         self.busy = set()
         self.done = done_backend()
         self.sem = asyncio.Semaphore(maxtasks)
+
+        self.seenSem = asyncio.Semaphore(1)
         self.seen = SqliteDict('./seen.sqlite', autocommit=True)
+        
         self.maxtasks = maxtasks
         self.load = load
 
@@ -83,12 +89,10 @@ class Crawler:
         Main function to start parsing site
         :return:
         """
-        if self.load:
-            for _ in range(self.maxtasks):
-                t = asyncio.ensure_future(self.maybeAddUrl())
-        else:
+        if not self.load:
             self.addurls([(self.rooturl, '')])
-            t = asyncio.ensure_future(self.maybeAddUrl())
+        
+        t = asyncio.gather(*[self.maybeAddUrl() for _ in range(self.maxtasks)])
         
         await asyncio.sleep(1)
         while self.busy:
@@ -101,37 +105,51 @@ class Crawler:
         self.todo_queue.close()
 
     async def maybeAddUrl(self, url=None):
-        if len(self.todo_queue.keys()) == 0:
-            return
         if url is None:
-            url = next(iter(self.todo_queue.keys()))
+            try:
+                url = next(self.todo_queue.keys())
+            except StopIteration:
+                return
+
         # Acquire semaphore
         await self.sem.acquire()
+        # Acquire todo deletion semaphor
+        await self.todoSem.acquire()
+        try:
+            # Check that we can delete url from todo list
+            if url not in self.todo_queue:
+                self.todoSem.release()
+                return
+            del self.todo_queue[url]
+        finally:
+            self.todoSem.release()
         # Create async task
         task = asyncio.ensure_future(self.process(url))
         # Add callback into task to release semaphore
         task.add_done_callback(lambda t: self.sem.release())
-        # Add callback to pull another from todo queue
-        task.add_done_callback(lambda _: self.maybeAddUrl())
-        
-        # While resources availible, use them
-        while not self.sem.locked():
-            asyncio.ensure_future(self.maybeAddUrl())
 
-    def addurls(self, urls):
+        # Pull another from todo queue
+        asyncio.ensure_future(self.maybeAddUrl())
+
+    async def addurls(self, urls):
         """
         Add urls in queue and run process to parse
         :param urls:
         :return:
         """
-        for url, parenturl in urls:
-            url = urllib.parse.urljoin(parenturl, url)
-            url, frag = urllib.parse.urldefrag(url)
-            if (url.startswith(self.rooturl) and
-                    url not in self.busy and
-                    url not in self.seen and
-                    url not in self.todo_queue):
-                self.todo_queue[url] = True
+        await self.seenSem.acquire()
+        try:
+            for url, parenturl in urls:
+                url = urllib.parse.urljoin(parenturl, url)
+                url, frag = urllib.parse.urldefrag(url)
+                if (url.startswith(self.rooturl) and
+                        url not in self.busy and
+                        url not in self.seen and
+                        url not in self.todo_queue):
+                    self.seen[url] = True
+                    self.todo_queue[url] = True
+        finally:
+            self.seenSem.release()
 
     async def process(self, url):
         """
@@ -142,7 +160,6 @@ class Crawler:
         print('processing:', url)
 
         # remove url from basic queue and add it into busy list
-        del self.todo_queue[url]
         self.busy.add(url)
 
         try:
@@ -153,8 +170,6 @@ class Crawler:
             # I don't think this is needed anymore
             if url.startswith(self.prefix):
                 self.done[url] = False
-            # Add url to seen set
-            self.seen[url] = True
         else:
             # only url with status == 200 and content type == 'text/html' parsed
             if (resp.status == 200 and
@@ -177,10 +192,12 @@ class Crawler:
             if url.startswith(self.prefix):
                 self.done[url] = True
                 self.countFinished += 1
-            # Add url to seen set
-            self.seen[url] = True
         self.busy.remove(url)
+        self.maybeWriteFile()
 
+        logging.info(len(self.done))
+
+    async def maybeWriteFile(self):
         # If number of finished tasks is the same as the batch_size
         if self.countFinished == self.batch_size:
             # Acquire semaphore
@@ -196,5 +213,3 @@ class Crawler:
                 self.done.clear()
             finally:
                 self.fileSem.release()
-
-        logging.info(len(self.done))
