@@ -104,30 +104,45 @@ class Crawler:
         self.seen.close()
         self.todo_queue.close()
 
+    def canGetNextDictKey(self, dictionary):
+        try:
+            res = next(dictionary.keys())
+            return res, True
+        except StopIteration:
+            return None, False
+
     async def maybeAddUrl(self, url=None):
         while True:
             if url is None:
-                try:
-                    url = next(self.todo_queue.keys())
-                except StopIteration:
-                    if self.busy:
+                new_url, wasAble = self.canGetNextDictKey(self.todo_queue)
+                if not wasAble:
+                    # Sleep
+                    await asyncio.sleep(5)
+                    # If still busy, try again later
+                    if len(self.busy) > 0:
                         continue
                     else:
-                        return
+                        # If not busy, see if any more availible
+                        new_url, wasAble = self.canGetNextDictKey(self.todo_queue)
+                        # If no more availible, return
+                        if not wasAble:
+                            return
 
             # Acquire todo deletion semaphor
             await self.todoSem.acquire()
             try:
                 # Check that we can delete url from todo list
-                if url not in self.todo_queue:
+                if new_url not in self.todo_queue:
                     continue
-                del self.todo_queue[url]
+                del self.todo_queue[new_url]
             finally:
                 self.todoSem.release()
 
             # Create async task
-            await self.process(url)
-
+            await self.process(new_url)
+            # Add callback into task to release semaphore
+            self.sem.release()
+            self.busy.remove(new_url)
             # If url is specified, only do it once
             if url is not None:
                 return
@@ -185,17 +200,14 @@ class Crawler:
                         retryCount += 1
                 
                 urls = re.findall(r'(?i)href=["\']?([^\s"\'<>]+)', data)
-                asyncio.Task(self.addurls([(u, url) for u in urls]))
-
+                await self.addurls([(u, url) for u in urls])
             # even if we have no exception, we can mark url as good
             resp.close()
             # Prep url for write if it begins with prefix
             if url.startswith(self.prefix):
                 self.done[url] = True
                 self.countFinished += 1
-        self.busy.remove(url)
         await self.maybeWriteFile()
-
         logging.info(len(self.done))
 
     async def maybeWriteFile(self):
