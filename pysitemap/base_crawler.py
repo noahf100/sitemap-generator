@@ -1,5 +1,6 @@
 import aiohttp
 import asyncio
+import gc
 import logging
 import re
 import urllib.parse
@@ -173,6 +174,7 @@ class Crawler:
                 self.countFinished = 0
                 # Reset done 
                 self.done = dict()
+                gc.collect()
             finally:
                 self.fileSem.release()
 
