@@ -90,7 +90,7 @@ class Crawler:
         :return:
         """
         if not self.load:
-            self.addurls([(self.rooturl, '')])
+            await self.addurls([(self.rooturl, '')])
         
         t = asyncio.gather(*[self.maybeAddUrl() for _ in range(self.maxtasks)])
         
@@ -105,31 +105,32 @@ class Crawler:
         self.todo_queue.close()
 
     async def maybeAddUrl(self, url=None):
-        if url is None:
+        while True:
+            if url is None:
+                try:
+                    url = next(self.todo_queue.keys())
+                except StopIteration:
+                    if self.busy:
+                        continue
+                    else:
+                        return
+
+            # Acquire todo deletion semaphor
+            await self.todoSem.acquire()
             try:
-                url = next(self.todo_queue.keys())
-            except StopIteration:
-                return
-
-        # Acquire semaphore
-        await self.sem.acquire()
-        # Acquire todo deletion semaphor
-        await self.todoSem.acquire()
-        try:
-            # Check that we can delete url from todo list
-            if url not in self.todo_queue:
+                # Check that we can delete url from todo list
+                if url not in self.todo_queue:
+                    continue
+                del self.todo_queue[url]
+            finally:
                 self.todoSem.release()
-                return
-            del self.todo_queue[url]
-        finally:
-            self.todoSem.release()
-        # Create async task
-        task = asyncio.ensure_future(self.process(url))
-        # Add callback into task to release semaphore
-        task.add_done_callback(lambda t: self.sem.release())
 
-        # Pull another from todo queue
-        asyncio.ensure_future(self.maybeAddUrl())
+            # Create async task
+            await self.process(url)
+
+            # If url is specified, only do it once
+            if url is not None:
+                return
 
     async def addurls(self, urls):
         """
@@ -193,7 +194,7 @@ class Crawler:
                 self.done[url] = True
                 self.countFinished += 1
         self.busy.remove(url)
-        self.maybeWriteFile()
+        await self.maybeWriteFile()
 
         logging.info(len(self.done))
 
