@@ -3,6 +3,7 @@ import asyncio
 import logging
 import re
 import urllib.parse
+import validators
 
 from sqlitedict import SqliteDict
 from pysitemap.format_processors.xml import XMLWriter
@@ -140,6 +141,7 @@ class Crawler:
             finally:
                 self.todoSem.release()
 
+            # Maybe we don't need this if statement or the deleted boolean
             if deleted:
                 # Create async task
                 await self.process(new_url)
@@ -165,6 +167,7 @@ class Crawler:
                 url = urllib.parse.urljoin(parenturl, url)
                 url, frag = urllib.parse.urldefrag(url)
                 if (url.startswith(self.rooturl) and
+                        validators.url(url)  and
                         url not in self.busy and
                         url not in self.seen and
                         url not in self.todo_queue):
