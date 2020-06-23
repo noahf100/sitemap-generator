@@ -128,6 +128,7 @@ class Crawler:
                         if not wasAble:
                             return
 
+            deleted = False
             # Acquire todo deletion semaphor
             await self.todoSem.acquire()
             try:
@@ -135,15 +136,17 @@ class Crawler:
                 if new_url not in self.todo_queue:
                     continue
                 del self.todo_queue[new_url]
+                deleted = True
             finally:
                 self.todoSem.release()
 
+            if deleted:
                 # Create async task
                 await self.process(new_url)
                 # Add callback into task to release semaphore
                 self.sem.release()
                 self.busy.remove(new_url)
-                
+
             # If url is specified, only do it once
             if url is not None:
                 return
