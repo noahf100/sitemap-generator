@@ -189,9 +189,10 @@ class Crawler:
         except Exception as exc:
             # on any exception mark url as BAD
             print('...', url, 'has error', repr(str(exc)))
-            # I don't think this is needed anymore
+            # Add url without looking at text if it starts with a good prefix
+            # We just won't get any other webpages it links to
             if url.startswith(self.prefix):
-                self.done[url] = False
+                self.done[url] = True
         else:
             # only url with status == 200 and content type == 'text/html' parsed
             if (resp.status == 200 and
