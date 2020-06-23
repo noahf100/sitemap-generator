@@ -146,10 +146,12 @@ class Crawler:
                 # Add callback into task to release semaphore
                 self.sem.release()
                 self.busy.remove(new_url)
-
+            
             # If url is specified, only do it once
             if url is not None:
                 return
+            # Otherwise, add a delay so don't spam the server
+            await asyncio.sleep(3)
 
     async def addurls(self, urls):
         """
