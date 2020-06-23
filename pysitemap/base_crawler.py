@@ -138,11 +138,12 @@ class Crawler:
             finally:
                 self.todoSem.release()
 
-            # Create async task
-            await self.process(new_url)
-            # Add callback into task to release semaphore
-            self.sem.release()
-            self.busy.remove(new_url)
+                # Create async task
+                await self.process(new_url)
+                # Add callback into task to release semaphore
+                self.sem.release()
+                self.busy.remove(new_url)
+                
             # If url is specified, only do it once
             if url is not None:
                 return
